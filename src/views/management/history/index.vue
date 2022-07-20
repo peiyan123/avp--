@@ -1,0 +1,168 @@
+<template>
+  <page-wrapper :title="typeTitle">
+    <basic-table
+      rowKey="id"
+      ref="tableRef"
+      bordered
+      striped
+      canResize
+      :loading="loading"
+      :columns="columns"
+      :dataSource="data"
+      :pagination="pagination"
+      @change="change"
+      :actionColumn="{
+        width: lang == 'zh_CN' ? 160 : 260,
+        title: t('component.carport.carport_opt'),
+        dataIndex: 'action',
+        slots: { customRender: 'action' }
+      }"
+      :indexColumnProps="{
+        width: 60
+      }"
+    >
+      <template #form-custom></template>
+      <template #action="{ record }">
+        <table-action
+          :actions="[
+            {
+              label: t('component.carport.port_in_record'),
+              onClick: handleIn.bind(null, record),
+              disabled: false
+            },
+            {
+              label: t('component.carport.port_out_record'),
+              onClick: handleOut.bind(null, record),
+              disabled: !record.parkingRecord.parkingOutRecordId
+            }
+          ]"
+        />
+      </template>
+    </basic-table>
+    <modal @register="registerModal" @close="handleClose" />
+  </page-wrapper>
+</template>
+<script lang="ts">
+  import { defineComponent, onMounted, ref, unref } from 'vue';
+  import { PageWrapper } from '/@/components/Page';
+  import { BasicTable, TableAction, TableActionType } from '/@/components/Table';
+  import Modal from './components/Modal.vue';
+  import { useModal } from '/@/components/Modal';
+  import { getBasicColumns } from './options/table';
+  import { useMessage } from '/@/hooks/web/useMessage';
+  import { carPortRecordApi, deviceTypeDeleteApi, changeStatusApi } from '/@/api/sys/user';
+  import { FormProps } from '/@/components/Table';
+  import { useRouter } from 'vue-router';
+  import { useI18n } from '/@/hooks/web/useI18n';
+  import { useLocale } from '/@/locales/useLocale';
+
+  export default defineComponent({
+    components: { PageWrapper, BasicTable, TableAction, Modal },
+    params: {
+      id: String,
+      type: String
+    },
+    setup() {
+      const loading = ref(false);
+      const router = useRouter();
+      const { t } = useI18n();
+      const pagination = ref<any>(true);
+      const lang = useLocale().getLocale.value;
+      const tableRef = ref<Nullable<TableActionType>>(null);
+      const dataList = ref<any>('');
+      const typeTitle = ref<any>('');
+      const id = ref<any>('');
+      const [registerModal, { openModal, closeModal }] = useModal();
+      const { createConfirm } = useMessage();
+      function getTableAction() {
+        const tableAction = unref(tableRef);
+        if (!tableAction) {
+          throw new Error('tableAction is null');
+        }
+        return tableAction;
+      }
+      typeTitle.value =
+        router.currentRoute.value.params.lotNo +
+        t('component.carport.carport_suffix') +
+        '      ' +
+        router.currentRoute.value.params.floor +
+        t('component.carport.carport_floor_suffix');
+      id.value = router.currentRoute.value.params.id;
+
+      function change() {
+        getList();
+      }
+      // 泊入记录
+      function handleIn(data) {
+        openModal(true, { type: 'in', ...data });
+      }
+      async function getList() {
+        if (!router.currentRoute.value.params.lotNo) {
+          return router.go(-1);
+        }
+        var data = await carPortRecordApi(`/avp/parking/record/find/lot-record/${id.value}`);
+        dataList.value = data;
+        getTableAction().setPagination({
+          current: getTableAction().getPaginationRef().current,
+          total: data.total
+        });
+        getTableAction().reload();
+      }
+      onMounted(() => {
+        getList();
+      });
+      // 泊出记录
+      function handleOut(data) {
+        openModal(true, { type: 'out', ...data });
+      }
+
+      function handleDelete(val) {
+        console.info(val);
+        createConfirm({
+          iconType: 'warning',
+          title: () => t('component.app.tip'),
+          content: () => t('component.app.del_tip'),
+          onOk: async () => {
+            const params = Object.assign(
+              {},
+              {
+                ids: val.id
+              }
+            );
+            await deviceTypeDeleteApi(params);
+
+            getList();
+          }
+        });
+      }
+
+      function handleClose() {
+        async function getList() {
+          dataList.value = await carPortRecordApi('');
+        }
+        localStorage.removeItem('deviceId');
+        getList();
+        closeModal();
+      }
+
+      return {
+        tableRef,
+        typeTitle,
+        id,
+        change,
+        columns: getBasicColumns(),
+        data: dataList,
+        t,
+        lang,
+        loading,
+        getList,
+        pagination,
+        registerModal,
+        handleIn,
+        handleOut,
+        handleDelete,
+        handleClose
+      };
+    }
+  });
+</script>
